@@ -1,42 +1,48 @@
-const { createClient } = require('@supabase/supabase-js');
+import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
-exports.handler = async function(event) {
-  const { studentId, candidate } = JSON.parse(event.body);
+exports.handler = async (event) => {
+  const { studentId, candidate, position } = JSON.parse(event.body);
 
-  if (!studentId || !candidate) {
+  // Check if the student has already voted
+  const { data: existingVote, error: fetchError } = await supabase
+    .from('votes')
+    .select('*')
+    .eq('student_id', studentId)
+    .single();
+
+  if (fetchError && fetchError.code !== 'PGRST116') {
     return {
-      statusCode: 400,
-      body: JSON.stringify({ message: 'Missing student ID or candidate.' }),
+      statusCode: 500,
+      body: JSON.stringify({ message: 'Error checking existing vote' }),
     };
   }
 
-  const { data: existing } = await supabase
-    .from('votes')
-    .select('id')
-    .eq('student_id', studentId);
-
-  if (existing.length > 0) {
+  if (existingVote) {
     return {
-      statusCode: 403,
+      statusCode: 400,
       body: JSON.stringify({ message: 'You have already voted.' }),
     };
   }
 
-  const { error } = await supabase
-    .from('votes')
-    .insert([{ student_id: studentId, candidate }]);
+  // Insert the new vote
+  const { error: insertError } = await supabase.from('votes').insert([
+    { student_id: studentId, candidate, position },
+  ]);
 
-  if (error) {
+  if (insertError) {
     return {
       statusCode: 500,
-      body: JSON.stringify({ message: 'Voting failed.' }),
+      body: JSON.stringify({ message: 'Error saving your vote.' }),
     };
   }
 
   return {
     statusCode: 200,
-    body: JSON.stringify({ message: 'Vote successfully submitted.' }),
+    body: JSON.stringify({ message: 'Vote submitted successfully!' }),
   };
 };
